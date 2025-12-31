@@ -1,0 +1,6 @@
+# Node modules
+node_modules/
+
+# VS Code
+.vscode/settings.json
+
