@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
-import { Users, Calendar, Home, User, Search } from 'lucide-react-native';
+import { Users, Calendar, Home, User } from 'lucide-react-native';
 import { supabase } from '../../api/supabase';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 
 export default function TabLayout() {
   const [role, setRole] = useState<'doctor' | 'patient' | null>(null);
@@ -23,6 +23,7 @@ export default function TabLayout() {
           .single();
 
         if (data) {
+          console.log("Rôle détecté :", data.role); // Pour déboguer
           setRole(data.role);
         }
       }
@@ -47,14 +48,26 @@ export default function TabLayout() {
         tabBarActiveTintColor: '#246BFD',
         tabBarInactiveTintColor: '#999',
         headerShown: false,
+        tabBarHideOnKeyboard: true, // Évite que la barre monte avec le clavier
         tabBarStyle: {
-          height: 85,
-          paddingBottom: 10,
-          paddingTop: 5,
+          position: 'absolute',      // Supprime la bande blanche en intégrant la barre
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 95,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 0,         // Supprime la ligne de bordure
+          elevation: 20,             // Ombre sur Android
+          shadowColor: '#000',       // Ombre sur iOS
+          shadowOffset: { width: 0, height: -10 },
+          shadowOpacity: 0.05,
+          shadowRadius: 10,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+          paddingTop: 10,
         },
       }}
     >
-      {/* --- ONGLET ACCUEIL (Commun aux deux) --- */}
+      {/* ACCUEIL */}
       <Tabs.Screen
         name="index"
         options={{
@@ -63,38 +76,38 @@ export default function TabLayout() {
         }}
       />
 
-      {/* --- ONGLETS DOCTEUR --- */}
+      {/* PLANNING (Visible pour les Docteurs) */}
       <Tabs.Screen
         name="appointments"
         options={{
           title: "Planning",
           tabBarIcon: ({ color }) => <Calendar color={color} size={24} />,
-          // Affiché seulement si Docteur, sinon caché
           href: role === 'doctor' ? '/appointments' : null,
         }}
       />
 
+      {/* PATIENTS (Visible pour les Docteurs) */}
       <Tabs.Screen
         name="patients"
         options={{
-          title: "Mes Patients",
+          title: "Patients",
           tabBarIcon: ({ color }) => <Users color={color} size={24} />,
           href: role === 'doctor' ? '/patients' : null,
         }}
       />
 
-      {/* --- ONGLETS PATIENT --- */}
-
+      {/* MES RDV (Visible pour les Patients) */}
       <Tabs.Screen
-        name="appointmentsPatient"
-        options={{
-          title: "Mes RDV",
-          tabBarIcon: ({ color }) => <Calendar color={color} size={24} />,
-          href: role === 'patient' ? '/appointmentsPatient' : null,
-        }}
-      />
+  name="appointmentsPatient"
+  options={{
+    title: "Mes RDV",
+    tabBarIcon: ({ color }) => <Calendar color={color} size={24} />,
+    // FORCE L'AFFICHAGE POUR TESTER
+    href: role === 'patient' ? '/appointmentsPatient' : null, 
+  }}
+/>
 
-      {/* --- ONGLET PROFIL (Commun aux deux) --- */}
+      {/* PROFIL */}
       <Tabs.Screen
         name="profile"
         options={{
