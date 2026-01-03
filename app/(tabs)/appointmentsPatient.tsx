@@ -11,24 +11,35 @@ export default function AppointmentsPatient() {
   const [loading, setLoading] = useState(true);
 
   const fetchPatientData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-      const { data, error } = await supabase
-        .from('appointments')
-        .select(`id, appointment_date, appointment_time, status, doctor:doctor_id (full_name)`)
-        .eq('patient_id', user.id)
-        .order('appointment_date', { ascending: true });
+    // Récupération de la date du jour au format YYYY-MM-DD
+    const today = new Date().toISOString().split('T')[0];
 
-      if (error) throw error;
-      setAppointments(data || []);
-    } catch (e) {
-      console.error("Erreur chargement:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const { data, error } = await supabase
+      .from('appointments')
+      .select(`
+        id, 
+        appointment_date, 
+        appointment_time, 
+        status, 
+        doctor:doctor_id (full_name)
+      `)
+      .eq('patient_id', user.id)
+      .gte('appointment_date', today) // FILTRE : Aujourd'hui ou après
+      .order('appointment_date', { ascending: true }) // Plus proche en premier
+      .order('appointment_time', { ascending: true }); // Puis par heure
+
+    if (error) throw error;
+    setAppointments(data || []);
+  } catch (e) {
+    console.error("Erreur chargement:", e);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchPatientData();

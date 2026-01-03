@@ -1,7 +1,23 @@
 import { supabase } from './supabase';
 
 export const appointmentService = {
-  // 1. Récupérer les RDV d'aujourd'hui
+  // 1. Récupérer TOUT le planning à venir (Aujourd'hui + Futur)
+  // C'est cette fonction qu'il faut utiliser pour l'affichage principal
+  async getUpcomingAppointments(doctorId: string) {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('doctor_id', doctorId)
+      .gte('appointment_date', today) // gte = Greater Than or Equal (Aujourd'hui ou après)
+      .order('appointment_date', { ascending: true })
+      .order('appointment_time', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  // 2. Récupérer uniquement aujourd'hui (Si vous voulez un onglet spécifique)
   async getTodayAppointments(doctorId: string) {
     const today = new Date().toISOString().split('T')[0];
     const { data, error } = await supabase
@@ -15,15 +31,14 @@ export const appointmentService = {
     return data || [];
   },
 
-  // 2. Récupérer les RDV futurs
+  // 3. Récupérer uniquement le futur (Excluant aujourd'hui)
   async getFutureAppointments(doctorId: string) {
     const todayStr = new Date().toISOString().split('T')[0];
-
     const { data, error } = await supabase
       .from('appointments')
       .select('*')
       .eq('doctor_id', doctorId)
-      .gt('appointment_date', todayStr)
+      .gt('appointment_date', todayStr) // gt = Greater Than (Après aujourd'hui)
       .order('appointment_date', { ascending: true })
       .order('appointment_time', { ascending: true });
 
@@ -31,14 +46,14 @@ export const appointmentService = {
     return data || [];
   },
 
-  // 3. Mettre à jour le statut (C'est celle-ci qui lance la visio)
+  // 4. Mettre à jour le statut (Lancer la consultation)
   async updateStatus(appointmentId: string, status: string) {
     try {
       const { data, error } = await supabase
         .from('appointments')
-        .update({ status: 'in_progress' })
+        .update({ status: status }) // Utilise le paramètre status passé (ex: 'in_progress')
         .eq('id', appointmentId)
-        .select(); // Garde bien le select() pour le Realtime
+        .select(); 
       
       if (error) throw error;
       return { data, error: null };
@@ -48,13 +63,13 @@ export const appointmentService = {
     }
   },
 
-  // 4. Terminer un RDV (Corrigé pour notifier le patient)
+  // 5. Terminer un RDV
   async completeAppointment(appointmentId: string) {
     const { data, error } = await supabase
       .from('appointments')
       .update({ status: 'completed' })
       .eq('id', appointmentId)
-      .select(); // AJOUTÉ : pour que le bouton vert disparaisse chez le patient
+      .select(); 
 
     if (error) throw error;
     return data;

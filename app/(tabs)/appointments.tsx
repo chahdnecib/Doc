@@ -18,29 +18,34 @@ export default function DoctorAppointments() {
   }, []);
 
   const fetchDoctorData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', user?.id).single();
-      setDoctorProfile(prof);
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: prof } = await supabase.from('profiles').select('full_name').eq('id', user?.id).single();
+    setDoctorProfile(prof);
 
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('doctor_id', user?.id)
-        .order('appointment_date', { ascending: true });
-      
-      if (error) throw error;
-      setAppointments(data || []);
+    // RÉCUPÉRATION DE LA DATE DU JOUR (Format YYYY-MM-DD)
+    const today = new Date().toISOString().split('T')[0];
 
-      const initialNotes: { [key: string]: string } = {};
-      data?.forEach(app => { initialNotes[app.id] = app.notes || ""; });
-      setLocalNotes(initialNotes);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('doctor_id', user?.id)
+      .gte('appointment_date', today) // FILTRE : Date supérieure ou égale à aujourd'hui
+      .order('appointment_date', { ascending: true })
+      .order('appointment_time', { ascending: true }); // Trié par jour puis par heure
+    
+    if (error) throw error;
+    setAppointments(data || []);
+
+    const initialNotes: { [key: string]: string } = {};
+    data?.forEach(app => { initialNotes[app.id] = app.notes || ""; });
+    setLocalNotes(initialNotes);
+  } catch (e) {
+    console.error(e);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleStartCall = async (appointment: any) => {
   try {
@@ -98,7 +103,7 @@ export default function DoctorAppointments() {
         <View style={styles.apptBody}>
           <View style={{ flex: 1 }}>
             <Text style={styles.patientName}>{item.patient_name || "Patient"}</Text>
-            <Text style={styles.typeText}>{isTeleconsul ? "🌐 Google Meet" : "🏥 Cabinet"}</Text>
+            <Text style={styles.typeText}>{isTeleconsul ? "🌐 Meet" : "🏥 Cabinet"}</Text>
           </View>
 
           {isTeleconsul && (
