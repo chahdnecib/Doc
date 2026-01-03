@@ -11,7 +11,8 @@ import {
   ScrollView, 
   Alert, 
   Linking,
-  FlatList 
+  FlatList,
+  Platform 
 } from 'react-native';
 import { 
   Search, 
@@ -33,7 +34,6 @@ import { supabase } from '../api/supabase';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import * as Location from 'expo-location'; // Ajouté pour la localisation
-import * as Notifications from 'expo-notifications'; // Ajouté pour éviter les erreurs de ref
 
 // Configuration FR pour le calendrier
 LocaleConfig.locales['fr'] = {
@@ -82,6 +82,27 @@ export default function PatientDashboard({ profile }: { profile: any }) {
 
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['85%', '95%'], []);
+
+  // --- OUVERTURE GPS ---
+const openMaps = (address: string) => {
+  if (!address) {
+    Alert.alert("Information", "L'adresse n'est pas renseignée pour ce cabinet.");
+    return;
+  }
+  
+  // Prépare l'URL selon le système d'exploitation
+  const url = Platform.select({
+    ios: `maps:0,0?q=${encodeURIComponent(address)}`,
+    android: `geo:0,0?q=${encodeURIComponent(address)}`,
+  });
+
+  if (url) {
+    Linking.openURL(url).catch(() => 
+      Alert.alert("Erreur", "Impossible d'ouvrir l'application de navigation.")
+    );
+  }
+};
+  
 
   // --- LOCALISATION DYNAMIQUE ---
   useEffect(() => {
@@ -417,6 +438,22 @@ export default function PatientDashboard({ profile }: { profile: any }) {
                 <Text style={styles.infoValue} numberOfLines={2}>Médecin spécialiste avec plus de 10 ans d'expérience...</Text>
               </View>
             </View>
+
+            {/* AJOUT ADRESSE CLIQUABLE */}
+<TouchableOpacity 
+  style={styles.infoRow} 
+  onPress={() => openMaps(selectedDocInfo?.address)}
+>
+  <View style={[styles.infoIconBox, { backgroundColor: '#E7F0FF' }]}>
+    <MapPin size={20} color="#246BFD" />
+  </View>
+  <View style={{ flex: 1 }}>
+    <Text style={styles.infoLabel}>Adresse du cabinet</Text>
+    <Text style={[styles.infoValue, { color: '#246BFD', textDecorationLine: 'underline' }]}>
+      {selectedDocInfo?.address || "Cliquer pour localiser"}
+    </Text>
+  </View>
+</TouchableOpacity>
 
             <TouchableOpacity 
               style={styles.modalBookBtn} 
