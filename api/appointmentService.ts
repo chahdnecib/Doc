@@ -36,7 +36,7 @@ export const appointmentService = {
     try {
       const { data, error } = await supabase
         .from('appointments')
-        .update({ status: 'in_progess' })
+        .update({ status: 'in_progress' })
         .eq('id', appointmentId)
         .select(); // Garde bien le select() pour le Realtime
       

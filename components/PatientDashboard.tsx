@@ -4,7 +4,7 @@ import {
   TouchableOpacity, ActivityIndicator, Image, ScrollView, Alert, Linking
 } from 'react-native';
 import { 
-  Search, Bell, Stethoscope, Brain, Bone, Baby, X, MapPin, Phone, Info
+  Search, Bell, Stethoscope, Brain, Bone, Baby, X, MapPin, Phone, Info, Video
 } from 'lucide-react-native';
 import { supabase } from '../api/supabase';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -34,11 +34,16 @@ export default function PatientDashboard({ profile }: { profile: any }) {
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // États pour les détails du docteur (Modale)
+  // --- ÉTATS NOTIFICATIONS & APPELS ---
+  const [hasNotif, setHasNotif] = useState(false);
+  const [incomingCall, setIncomingCall] = useState<any>(null);
+  const [callModalVisible, setCallModalVisible] = useState(false);
+
+  // Détails docteur
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedDocInfo, setSelectedDocInfo] = useState<any>(null);
 
-  // États de réservation (Bottom Sheet)
+  // Réservation
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -46,13 +51,36 @@ export default function PatientDashboard({ profile }: { profile: any }) {
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['75%', '95%'], []);
 
+  // --- LOGIQUE TEMPS RÉEL (RING) ---
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    const channel = supabase
+      .channel('patient_alerts')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `patient_id=eq.${profile.id}` },
+        (payload) => {
+          setIncomingCall(payload.new);
+          setHasNotif(true);
+          setCallModalVisible(true); 
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile]);
+
   // Recherche des docteurs
   useEffect(() => {
     const fetchDoctors = async () => {
       setLoading(true);
-      // On récupère toutes les infos nécessaires pour la modale
       let query = supabase.from('profiles').select('*').eq('role', 'doctor');
-      if (searchQuery) query = query.or(`full_name.ilike.%${searchQuery}%,specialty.ilike.%${searchQuery}%`);
+      if (searchQuery) {
+        query = query.or(`full_name.ilike.%${searchQuery}%,specialty.ilike.%${searchQuery}%`);
+      }
       const { data } = await query.limit(10);
       setDoctors(data || []);
       setLoading(false);
@@ -60,12 +88,6 @@ export default function PatientDashboard({ profile }: { profile: any }) {
     const timer = setTimeout(fetchDoctors, 500);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  // Ouvrir les détails
-  const handleShowDetails = (doctor: any) => {
-    setSelectedDocInfo(doctor);
-    setDetailVisible(true);
-  };
 
   const handleConfirmBooking = async () => {
     if (!selectedTime || !selectedDoctor) return;
@@ -102,24 +124,37 @@ export default function PatientDashboard({ profile }: { profile: any }) {
               <Text style={styles.locationText}>Batna, Algérie</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.notifBtn}><Bell size={22} color="#FFF" /></TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.notifBtn} 
+            onPress={() => {
+              if (incomingCall) setCallModalVisible(true);
+              setHasNotif(false);
+            }}
+          >
+            <Bell size={22} color="#FFF" />
+            {hasNotif && <View style={styles.ringBadge} />}
+          </TouchableOpacity>
         </View>
+
         <View style={styles.searchBar}>
           <Search size={20} color="#CCC" />
-          <TextInput placeholder="Rechercher un médecin..." style={styles.searchInput} value={searchQuery} onChangeText={setSearchQuery} />
+          <TextInput 
+            placeholder="Rechercher un médecin..." 
+            style={styles.searchInput} 
+            value={searchQuery} 
+            onChangeText={setSearchQuery} 
+          />
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
         {/* BANNIERE */}
         <View style={styles.banner}>
           <View style={{ flex: 1 }}>
             <Text style={styles.bannerTitle}>Bilan Médical</Text>
             <Text style={styles.bannerSub}>Vérifiez vos résultats d'examens.</Text>
-            <TouchableOpacity style={styles.bannerBtn}>
-              <Text style={styles.bannerBtnText}>Consulter</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.bannerBtn}><Text style={styles.bannerBtnText}>Consulter</Text></TouchableOpacity>
           </View>
           <Image source={require('../assets/images/logo.png')} style={styles.bannerImg} />
         </View>
@@ -137,8 +172,8 @@ export default function PatientDashboard({ profile }: { profile: any }) {
 
         {/* LISTE DOCTEURS */}
         <View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Médecins à proximité</Text></View>
-        {doctors.map((item) => (
-          <TouchableOpacity key={item.id} style={styles.doctorCard} onPress={() => handleShowDetails(item)}>
+        {loading ? <ActivityIndicator size="large" color="#246BFD" style={{marginTop: 20}} /> : doctors.map((item) => (
+          <TouchableOpacity key={item.id} style={styles.doctorCard} onPress={() => { setSelectedDocInfo(item); setDetailVisible(true); }}>
             <Image source={{ uri: `https://ui-avatars.com/api/?name=${item.full_name}` }} style={styles.docAvatar} />
             <View style={styles.docInfo}>
               <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
@@ -154,46 +189,48 @@ export default function PatientDashboard({ profile }: { profile: any }) {
         ))}
       </ScrollView>
 
-      {/* MODALE DÉTAILS DU DOCTEUR */}
+      {/* --- MODALE APPEL ENTRANT --- */}
+      <Modal visible={callModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.callCard}>
+            <View style={styles.callIconBox}><Video size={35} color="#FFF" /></View>
+            <Text style={styles.callTitle}>Appel Vidéo</Text>
+            <Text style={styles.callSub}>Le Dr. {incomingCall?.doctor_name} vous invite à une consultation.</Text>
+            
+            <View style={styles.callActionRow}>
+              <TouchableOpacity style={styles.declineBtn} onPress={() => setCallModalVisible(false)}>
+                <X size={24} color="#FF3B30" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.acceptBtn} 
+                onPress={() => {
+                  Linking.openURL(incomingCall?.zoom_url);
+                  setCallModalVisible(false);
+                }}
+              >
+                <Video size={24} color="#FFF" />
+                <Text style={styles.acceptText}>REJOINDRE</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODALE DÉTAILS DOCTEUR */}
       <Modal visible={detailVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.detailModal}>
-            <TouchableOpacity style={styles.closeModalBtn} onPress={() => setDetailVisible(false)}>
-              <X size={24} color="#333" />
-            </TouchableOpacity>
-            
+            <TouchableOpacity style={styles.closeModalBtn} onPress={() => setDetailVisible(false)}><X size={24} color="#333" /></TouchableOpacity>
             <Image source={{ uri: `https://ui-avatars.com/api/?name=${selectedDocInfo?.full_name}` }} style={styles.modalAvatar} />
             <Text style={styles.modalDocName}>Dr. {selectedDocInfo?.full_name}</Text>
             <Text style={styles.modalDocSpec}>{selectedDocInfo?.specialty}</Text>
-
             <View style={styles.divider} />
-
             <View style={styles.infoRow}>
               <View style={styles.infoIconBox}><Phone size={20} color="#246BFD" /></View>
-              <View>
-                <Text style={styles.infoLabel}>Téléphone</Text>
-                <TouchableOpacity onPress={() => Linking.openURL(`tel:${selectedDocInfo?.phone}`)}>
-                  <Text style={styles.infoValue}>{selectedDocInfo?.phone || "Non renseigné"}</Text>
-                </TouchableOpacity>
-              </View>
+              <View><Text style={styles.infoLabel}>Téléphone</Text><Text style={styles.infoValue}>{selectedDocInfo?.phone || "Non renseigné"}</Text></View>
             </View>
-
-            <View style={styles.infoRow}>
-  <View style={styles.infoIconBox}><MapPin size={20} color="#E74C3C" /></View>
-  <View style={{ flex: 1 }}>
-    <Text style={styles.infoLabel}>Localisation du Cabinet</Text>
-    {/* On affiche ici l'adresse provenant de la BDD */}
-    <Text style={styles.infoValue}>
-      {selectedDocInfo?.address ? selectedDocInfo.address : "Adresse non renseignée"}
-    </Text>
-  </View>
-</View>
-
-            <TouchableOpacity style={styles.modalBookBtn} onPress={() => { 
-                setDetailVisible(false);
-                setSelectedDoctor(selectedDocInfo);
-                bottomSheetRef.current?.expand();
-              }}>
+            <TouchableOpacity style={styles.modalBookBtn} onPress={() => { setDetailVisible(false); setSelectedDoctor(selectedDocInfo); bottomSheetRef.current?.expand(); }}>
               <Text style={styles.modalBookBtnText}>Prendre RDV maintenant</Text>
             </TouchableOpacity>
           </View>
@@ -227,7 +264,8 @@ const styles = StyleSheet.create({
   avatar: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#FFF' },
   helloText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
   locationText: { color: '#D1E3FF', fontSize: 12 },
-  notifBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12 },
+  notifBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12, position: 'relative' },
+  ringBadge: { position: 'absolute', top: 8, right: 8, width: 10, height: 10, backgroundColor: '#FF3B30', borderRadius: 5, borderWidth: 1.5, borderColor: '#246BFD' },
   searchBar: { backgroundColor: '#FFF', borderRadius: 15, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 50 },
   searchInput: { flex: 1, marginLeft: 10 },
   scrollContent: { paddingBottom: 50 },
@@ -250,9 +288,15 @@ const styles = StyleSheet.create({
   docSpec: { color: '#246BFD', fontSize: 13, marginBottom: 5 },
   bookBtn: { backgroundColor: '#246BFD', padding: 10, borderRadius: 10, marginTop: 5, alignItems: 'center' },
   bookBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 12 },
-
-  // STYLES MODALE DÉTAILS
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  callCard: { width: '85%', backgroundColor: '#FFF', borderRadius: 30, padding: 25, alignItems: 'center' },
+  callIconBox: { backgroundColor: '#2ECC71', padding: 20, borderRadius: 25, marginBottom: 15 },
+  callTitle: { fontSize: 22, fontWeight: 'bold', color: '#333' },
+  callSub: { textAlign: 'center', color: '#666', marginTop: 8, marginBottom: 25 },
+  callActionRow: { flexDirection: 'row', gap: 15 },
+  declineBtn: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center' },
+  acceptBtn: { flex: 1, height: 60, borderRadius: 30, backgroundColor: '#2ECC71', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
+  acceptText: { color: '#FFF', fontWeight: 'bold' },
   detailModal: { width: '85%', backgroundColor: '#FFF', borderRadius: 30, padding: 20, alignItems: 'center' },
   closeModalBtn: { alignSelf: 'flex-end', padding: 5 },
   modalAvatar: { width: 100, height: 100, borderRadius: 50, marginBottom: 15, borderWidth: 3, borderColor: '#F0F6FF' },
@@ -265,7 +309,6 @@ const styles = StyleSheet.create({
   infoValue: { fontSize: 15, fontWeight: '600', color: '#333' },
   modalBookBtn: { backgroundColor: '#246BFD', width: '100%', padding: 15, borderRadius: 15, alignItems: 'center', marginTop: 10 },
   modalBookBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
-
   sheetTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 15 },
   timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 20 },
   slot: { width: '30%', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#EEE', alignItems: 'center' },
